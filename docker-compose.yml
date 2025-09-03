@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  app1:
+    build: .
+    container_name: flask-app1
+    ports:
+      - "5050:5000"
+    networks:
+      - app-net
+      - frontend-net
+    environment:
+      - FLASK_ENV=development
+
+  app2:
+    build: .
+    container_name: flask-app2
+    ports:
+      - "5051:5000"
+    networks:
+      - app-net
+      - frontend-net
+    environment:
+      - FLASK_ENV=development
+
+  nginx:
+    image: nginx:latest
+    container_name: nginx-balancer
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+    networks:
+      - frontend-net
+      - app-net
+
+  db:
+    image: postgres:latest
+    container_name: postgres-db
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - db-net
+
+networks:
+  app-net:
+    driver: bridge
+  db-net:
+    driver: bridge
+  frontend-net:
+    driver: bridge
+
+volumes:
+  db-data:
