@@ -1,7 +1,9 @@
-Балансировка нагрузки и отказоустойчивость
+### Балансировка нагрузки и отказоустойчивость
+
 Patroni — для управления кластером и автоматического failover. HAProxy — для маршрутизации трафика. Для этого развернуть ETCD кластер (минимум 3 ноды), настроить сетевые подключений, обеспечить безопасность соединений.
 Установить PostgreSQL на все ноды, настроить базовую конфигурацию и утсановить Patroni на ноды. 
 Примерный конфиг Patroni
+```
 postgresql:
     datadir: /var/lib/postgresql/12/main
     bin_dir: /usr/lib/postgresql/12/bin
@@ -31,8 +33,9 @@ bootstrap:
         options:
           createrole: true
           login: true
-
-Примерный конфиг HaProxy
+```          
+## Примерный конфиг HaProxy
+```
 global
     log 127.0.0.1 local0
     maxconn 4000
@@ -52,7 +55,9 @@ backend postgres-be
     server master 192.168.1.1:5432 check
     server replica1 192.168.1.2:5432 check backup
     server replica2 192.168.1.3:5432 check backup
-Структура:
+```
+## Структура:
+```
 +------------------+
 |  ETCD Cluster    |
 +------------------+
@@ -68,22 +73,27 @@ backend postgres-be
      +----+----+
      | HAProxy |
      +----+----+
+```
 
-
-TLS и безопасность
+### TLS и безопасность
 С помощью certbot получить серт для домена
+```
 certbot certonly \
   --dns-cloudflare \
   --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini \
   -d example.local
-и добавить в cron 0 0 * * * certbot renew --quiet
+```
+и добавить в cron ``` 0 0 * * * certbot renew --quiet ```
 Сгенерировать серты для CA, прокси и апп
+```
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ca.key -out ca.crt
 openssl req -newkey rsa:2048 -nodes -keyout nginx.key -out nginx.csr
 openssl x509 -req -days 365 -in nginx.csr -CA ca.crt -CAkey ca.key -set_serial 01 -out nginx.crt
 openssl req -newkey rsa:2048 -nodes -keyout app.key -out app.csr
 openssl x509 -req -days 365 -in app.csr -CA ca.crt -CAkey ca.key -set_serial 02 -out app.crt
+```
 Дополнить конфиг nginx
+```
 server {
     listen 443 ssl;
     server_name example.local;
@@ -93,7 +103,8 @@ server {
     ssl_certificate_key /etc/ssl/nginx.key;
     ssl_client_certificate /etc/ssl/ca.crt;
     ssl_verify_client on;
-Сетевая безопасность
+```
+# Сетевая безопасность
 Правила для балансировщика (Nginx):
 Входящие:
 Порт 80 (HTTP) - только для перенаправления на HTTPS
@@ -108,7 +119,7 @@ server {
 Для PostgreSQL:
 Порт 5432 только с IP-адресов приложений
 
-Мониторинг
+### Мониторинг
 Ключевые метрики для мониторинга
 Application:
 http_requests_total - общее количество HTTP запросов
@@ -124,10 +135,10 @@ pg_stat_statements_total_time - общее время выполнения за�
 pg_backend_memory_size - использование памяти
 
 
-CI/CD
+### CI/CD
 Примерный github actions с blue/green деплоем
+```
 name: CI/CD Pipeline
-
 on:
   push:
     branches:
@@ -135,7 +146,6 @@ on:
   pull_request:
     branches:
       - main
-
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -160,7 +170,6 @@ jobs:
           file: ./Dockerfile
           tags: registry.example.com/app:${{ github.sha }}
           push: true
-
   deploy:
     needs: build-test
     runs-on: ubuntu-latest
@@ -210,21 +219,25 @@ jobs:
           else
             kubectl delete deployment app-green
           fi
-
-IaC
+```
+### IaC
 Структура ansible
 ansible/
 ├── inventory/
 │   ├── production.ini
+```
 [docker-hosts]
 app-server ansible_host=192.168.1.10 ansible_user=admin
 db-server ansible_host=192.168.1.11 ansible_user=admin
+```
 │   └── development.ini
+```
 [docker-hosts]
 localhost ansible_connection=local
-
+```
 ├── group_vars/
 │   └── all.yml
+```
 docker_networks:
   app-net: {}
   db-net: {}
@@ -244,23 +257,25 @@ services:
     env:
       POSTGRES_DB: "{{ vault_db_name }}"
       POSTGRES_USER: "{{ vault_db_user }}"
-
+```
 ├── roles/
 │   ├── network
 │   │   ├── tasks
 │   │   │   └── main.yml
+```
 ---
 - name: Create Docker networks
   ansible.builtin.docker_network:
     name: "{{ item.name }}"
     driver: bridge
   with_items: "{{ docker_networks }}"
-
+```
 │   │   └── vars
 │   │       └── main.yml
 │   ├── database
 │   │   ├── tasks
 │   │   │   └── main.yml
+```
 ---
 - name: Create PostgreSQL volume
   ansible.builtin.docker_volume:
@@ -277,12 +292,13 @@ services:
       - postgres-data:/var/lib/postgresql/data
     networks:
       db-net: {}
-
+```
 │   │   └── vars
 │   │       └── main.yml
 │   └── application
 │       ├── tasks
 │       │   └── main.yml
+```
 ---
 - name: Deploy App containers
   ansible.builtin.docker_container:
@@ -294,11 +310,13 @@ services:
   with_sequence: count=2
 - name: Deploy Nginx balancer
   ansible.builtin.docker_container:
+```
 │       └── vars
 │           └── main.yml
 ├── vault/
 │   └── secrets.yml
 └── site.yml
+```
 ---
 - name: Deploy Docker Infrastructure
   hosts: docker-hosts
@@ -332,19 +350,19 @@ services:
         - app-2
         - nginx-balancer
         - postgres-db
-
+```
 Проверить плейбук
-ansible-playbook -i inventory/production.ini site.yml --syntax-check
+```ansible-playbook -i inventory/production.ini site.yml --syntax-check```
 Зависимость ролей
-ansible-playbook -i inventory/production.ini site.yml --list-tasks --list-dependencies
+```ansible-playbook -i inventory/production.ini site.yml --list-tasks --list-dependencies```
 Dry-run
-ansible-playbook -i inventory/production.ini site.yml --check
+```ansible-playbook -i inventory/production.ini site.yml --check```
 Запуск плейбука с подробностями
-ansible-playbook -i inventory/production.ini site.yml -vvv
+```ansible-playbook -i inventory/production.ini site.yml -vvv```
 Использовать Vault
-ansible-playbook -i inventory/production.ini site.yml --ask-vault-pass
+```ansible-playbook -i inventory/production.ini site.yml --ask-vault-pass```
 
-Диагностика и откладка
+### Диагностика и откладка
 1. Первичная оценка ситуации
 Сбор информации от пользователей: время и период проблемы, какое приложение/запрос/элемент АРМа, как часто проявляется. География пользователей
 2. Анализ метрик и логов
@@ -364,7 +382,7 @@ ELK Stack для анализа логов
 Zabbix для инффраструктуры
 OpenTelemetry для трассировки запросов
 
-Структура инфры
+### Структура инфры
                         +------------------+
                         |   Cloud Provider |
                         +------------------+
