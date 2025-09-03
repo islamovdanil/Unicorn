@@ -5,7 +5,7 @@ services:
     build: .
     container_name: flask-app1
     ports:
-      - "5050:5000"
+      - "5091:5000"
     networks:
       - app-net
       - frontend-net
@@ -16,7 +16,7 @@ services:
     build: .
     container_name: flask-app2
     ports:
-      - "5051:5000"
+      - "5092:5000"
     networks:
       - app-net
       - frontend-net
