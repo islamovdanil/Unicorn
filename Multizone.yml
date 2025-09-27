@@ -1,0 +1,98 @@
+# Deployment манифест для веб-приложения
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app-deployment
+  labels:
+    app: web-app
+spec:
+  # Устанавливаем реплики с учетом отказоустойчивости в мультизональном кластере
+  replicas: 4
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      # Настройки для оптимального использования ресурсов
+      containers:
+      - name: web-app-container
+        image: registry.example.com/web-app:latest
+        # Ресурсные ограничения с учетом пиковых нагрузок
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "0.1"
+          limits:
+            memory: "256Mi"
+            cpu: "1"
+        # Учитываем время инициализации приложения
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15  # 5-10 секунд на инициализацию + запас
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 15
+          periodSeconds: 20
+      # Распределяем поды по разным зонам для отказоустойчивости
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: app
+                operator: In
+                values:
+                - web-app
+            topologyKey: topology.kubernetes.io/zone
+
+---
+
+# Service для доступа к приложению
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-app-service
+  labels:
+    app: web-app
+spec:
+  selector:
+    app: web-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+  # Обеспечиваем балансировку между подами равномерно
+  sessionAffinity: None
+
+---
+
+# Горизонтальное масштабирование для оптимизации ресурсов
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web-app-autoscaler
+  labels:
+    app: web-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web-app-deployment
+  minReplicas: 1  # Минимум один под для ночной нагрузки
+  maxReplicas: 4  # Максимум 4 пода для пиковой нагрузки
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
